@@ -14,7 +14,10 @@ const app = express();
 // Capture raw body buffer — needed to verify Alchemy's HMAC signature
 app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; },
+  strict: false,    // tolerate non-object/array JSON roots
 }));
+// Also accept plain-text bodies (Alchemy test pings sometimes omit Content-Type)
+app.use(express.text({ type: '*/*' }));
 
 const PORT = process.env.PORT || 3000;
 
