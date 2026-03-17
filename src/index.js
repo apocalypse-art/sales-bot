@@ -14,7 +14,10 @@ const app = express();
 // Capture raw body buffer — needed to verify Alchemy's HMAC signature
 app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; },
+  strict: false,    // tolerate non-object/array JSON roots
 }));
+// Also accept plain-text bodies (Alchemy test pings sometimes omit Content-Type)
+app.use(express.text({ type: '*/*' }));
 
 const PORT = process.env.PORT || 3000;
 
@@ -23,8 +26,7 @@ app.get('/', (_req, res) => {
   res.json({ status: 'ok', bot: 'cryptoart-sales-bot' });
 });
 
-// ─── Alchemy "Test URL" check ─────────────────────────────────────────────────
-// Alchemy's dashboard sends a GET to validate the URL before saving.
+// ─── Alchemy test URL check (so the "Test URL" button works) ───────────────
 app.get('/webhook', (_req, res) => {
   res.sendStatus(200);
 });
