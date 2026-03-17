@@ -23,6 +23,11 @@ app.get('/', (_req, res) => {
   res.json({ status: 'ok', bot: 'cryptoart-sales-bot' });
 });
 
+// ─── Alchemy test URL check (so the "Test URL" button works) ───────────────
+app.get('/webhook', (_req, res) => {
+  res.sendStatus(200);
+});
+
 // ─── Alchemy webhook endpoint ─────────────────────────────────────────────────
 // Point your Alchemy NFT Activity webhook at: https://your-app.railway.app/webhook
 app.post('/webhook', async (req, res) => {
