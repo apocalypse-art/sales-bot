@@ -5,7 +5,7 @@
  * the sale, fetches artwork and ETH/USD price, then tweets.
  */
 
-const { fetchRecentSale } = require('./openSeaService');
+const { fetchRecentSale, buildChainExplorerLink, OPENSEA_UNSUPPORTED } = require('./openSeaService');
 const { fetchEthUsdPrice } = require('./priceService');
 const { downloadImageBuffer } = require('./imageService');
 const { postSaleTweet } = require('./twitterService');
@@ -61,9 +61,24 @@ async function handleAlchemyActivity(activity, network) {
   }
 
   if (!sale) {
-    // The transfer happened but OpenSea doesn't have a matching sale record.
-    // This is likely a wallet-to-wallet transfer, not a market sale — skip it.
-    console.log('No recent sale found on OpenSea for this transfer — skipping.');
+    if (OPENSEA_UNSUPPORTED.has(network)) {
+      // Chain isn't indexed by OpenSea — tweet without price data.
+      console.log(`Tweeting Shape transfer without price (OpenSea doesn't index ${network}).`);
+      const saleLink = buildChainExplorerLink(network, contractAddress, tokenId, txHash);
+      await postSaleTweet({
+        tokenName:   `#${tokenId}`,
+        ethPrice:    null,
+        usdPrice:    null,
+        currency:    'ETH',
+        marketplace: 'Shape',
+        saleLink,
+        imageBuffer: null,
+      });
+    } else {
+      // The transfer happened but OpenSea has no matching sale — likely a
+      // wallet-to-wallet transfer, not a market sale. Skip it.
+      console.log('No recent sale found on OpenSea for this transfer — skipping.');
+    }
     return;
   }
 

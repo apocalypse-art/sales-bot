@@ -13,12 +13,20 @@ const axios = require('axios');
 
 // Map Alchemy network names → OpenSea chain slugs
 const NETWORK_TO_CHAIN = {
-  ETH_MAINNET:  'ethereum',
-  BASE_MAINNET: 'base',
-  OPT_MAINNET:  'optimism',
-  ARB_MAINNET:  'arbitrum',
-  MATIC_MAINNET:'matic',
+  ETH_MAINNET:   'ethereum',
+  BASE_MAINNET:  'base',
+  OPT_MAINNET:   'optimism',
+  ARB_MAINNET:   'arbitrum',
+  MATIC_MAINNET: 'matic',
+  ZORA_MAINNET:  'zora',
 };
+
+// Chains that Alchemy supports but OpenSea does not index.
+// For these we return null from fetchRecentSale and saleHandler
+// falls back to a price-less "transfer detected" tweet.
+const OPENSEA_UNSUPPORTED = new Set([
+  'SHAPE_MAINNET',
+]);
 
 // Map OpenSea marketplace IDs to readable names
 const MARKETPLACE_NAMES = {
@@ -43,6 +51,12 @@ const MARKETPLACE_NAMES = {
  * @returns {Promise<object|null>}
  */
 async function fetchRecentSale(contractAddress, tokenId, alchemyNetwork) {
+  // Short-circuit for chains OpenSea doesn't index
+  if (OPENSEA_UNSUPPORTED.has(alchemyNetwork)) {
+    console.log(`${alchemyNetwork} is not indexed by OpenSea — will tweet without price.`);
+    return null;
+  }
+
   const apiKey = process.env.OPENSEA_API_KEY;
   if (!apiKey) throw new Error('Missing OPENSEA_API_KEY');
 
@@ -105,4 +119,16 @@ function buildFallbackLink(chain, contract, tokenId, txHash) {
   return `https://opensea.io/assets/${chain}/${contract}/${tokenId}`;
 }
 
-module.exports = { fetchRecentSale };
+/**
+ * Build an explorer link for chains not supported by OpenSea.
+ */
+function buildChainExplorerLink(alchemyNetwork, contract, tokenId, txHash) {
+  if (alchemyNetwork === 'SHAPE_MAINNET') {
+    return txHash
+      ? `https://shapescan.xyz/tx/${txHash}`
+      : `https://shapescan.xyz/token/${contract}?a=${tokenId}`;
+  }
+  return txHash ? `https://etherscan.io/tx/${txHash}` : null;
+}
+
+module.exports = { fetchRecentSale, buildChainExplorerLink, OPENSEA_UNSUPPORTED };

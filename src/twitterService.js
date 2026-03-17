@@ -41,13 +41,14 @@ async function postSaleTweet({ tokenName, ethPrice, usdPrice, currency = 'ETH', 
   const client = getClient();
 
   // ── Build tweet text ───────────────────────────────────────────────────────
-  const ethDisplay = formatEth(ethPrice);
-  const usdDisplay = formatUsd(usdPrice);
+  // ethPrice may be null for chains not indexed by OpenSea (e.g. Shape)
+  const priceLines = (ethPrice != null)
+    ? [``, `${formatEth(ethPrice)} ${currency}  ($${formatUsd(usdPrice)})`]
+    : [];
 
   const tweetText = [
     `${tokenName} sold on ${marketplace}!`,
-    ``,
-    `${ethDisplay} ${currency}  ($${usdDisplay})`,
+    ...priceLines,
     ``,
     saleLink,
   ].join('\n');
