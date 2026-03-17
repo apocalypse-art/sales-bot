@@ -30,24 +30,25 @@ function getClient() {
  *
  * @param {object} opts
  * @param {string}  opts.tokenName     e.g. "Apocalypse #12"
- * @param {string}  opts.collection    e.g. "Apocalypse Art"
  * @param {number}  opts.ethPrice      e.g. 0.5
  * @param {number}  opts.usdPrice      e.g. 1234.56
+ * @param {string}  opts.currency      e.g. "ETH" or "WETH"
  * @param {string}  opts.marketplace   e.g. "OpenSea"
  * @param {string}  opts.saleLink      URL to the sale / token page
  * @param {Buffer|null} opts.imageBuffer  Raw image bytes (or null if unavailable)
  */
-async function postSaleTweet({ tokenName, collection, ethPrice, usdPrice, marketplace, saleLink, imageBuffer }) {
+async function postSaleTweet({ tokenName, ethPrice, usdPrice, currency = 'ETH', marketplace, saleLink, imageBuffer }) {
   const client = getClient();
 
   // ── Build tweet text ───────────────────────────────────────────────────────
-  const ethDisplay = formatEth(ethPrice);
-  const usdDisplay = formatUsd(usdPrice);
+  // ethPrice may be null for chains not indexed by OpenSea (e.g. Shape)
+  const priceLines = (ethPrice != null)
+    ? [``, `${formatEth(ethPrice)} ${currency}  ($${formatUsd(usdPrice)})`]
+    : [];
 
   const tweetText = [
     `${tokenName} sold on ${marketplace}!`,
-    ``,
-    `${ethDisplay} ETH  ($${usdDisplay})`,
+    ...priceLines,
     ``,
     saleLink,
   ].join('\n');
