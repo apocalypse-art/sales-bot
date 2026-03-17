@@ -1,47 +1,67 @@
 /**
  * Cryptoart Sales Bot
- * Listens for NFT sales via Reservoir webhooks and posts to X/Twitter.
+ * Listens for NFT transfers via Alchemy webhooks, looks up the sale on
+ * OpenSea for price/marketplace data, then posts to X/Twitter.
  */
 
 require('dotenv').config();
+const crypto  = require('crypto');
 const express = require('express');
-const { handleSaleEvent } = require('./saleHandler');
+const { handleAlchemyActivity } = require('./saleHandler');
 
 const app = express();
-app.use(express.json());
+
+// Capture raw body buffer — needed to verify Alchemy's HMAC signature
+app.use(express.json({
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 
 const PORT = process.env.PORT || 3000;
 
 // ─── Health check (Railway uses this to verify the app is running) ────────────
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.json({ status: 'ok', bot: 'cryptoart-sales-bot' });
 });
 
-// ─── Reservoir webhook endpoint ───────────────────────────────────────────────
-// You'll point your Reservoir webhook at: https://your-app.railway.app/webhook
+// ─── Alchemy webhook endpoint ─────────────────────────────────────────────────
+// Point your Alchemy NFT Activity webhook at: https://your-app.railway.app/webhook
 app.post('/webhook', async (req, res) => {
-  // Acknowledge receipt immediately so Reservoir doesn't time out
+  // Acknowledge receipt immediately so Alchemy doesn't time out
   res.sendStatus(200);
 
-  const secret = process.env.RESERVOIR_WEBHOOK_SECRET;
-  if (secret && req.headers['x-reservoir-signature'] !== secret) {
-    console.warn('Rejected webhook: invalid signature');
-    return;
+  // ── Verify the request really came from Alchemy ───────────────────────────
+  const signingKey = process.env.ALCHEMY_SIGNING_KEY;
+  if (signingKey) {
+    const signature = req.headers['x-alchemy-signature'];
+    if (!isValidAlchemySignature(req.rawBody, signature, signingKey)) {
+      console.warn('Rejected webhook: invalid Alchemy signature');
+      return;
+    }
   }
 
-  const events = Array.isArray(req.body) ? req.body : [req.body];
+  const body = req.body;
 
-  for (const event of events) {
-    // Reservoir sends different event types; we only care about sales
-    if (event.type !== 'sale.created') continue;
+  // Alchemy wraps NFT_ACTIVITY events in body.event.activity (an array)
+  if (body.type !== 'NFT_ACTIVITY') return;
 
+  const activities = body.event?.activity ?? [];
+
+  for (const activity of activities) {
     try {
-      await handleSaleEvent(event.data);
+      await handleAlchemyActivity(activity, body.event.network);
     } catch (err) {
-      console.error('Error handling sale event:', err.message);
+      console.error('Error handling activity:', err.message);
     }
   }
 });
+
+// ─── HMAC-SHA256 signature verification ──────────────────────────────────────
+function isValidAlchemySignature(rawBody, signature, signingKey) {
+  if (!signature) return false;
+  const hmac   = crypto.createHmac('sha256', signingKey);
+  const digest = hmac.update(rawBody).digest('hex');
+  return digest === signature;
+}
 
 app.listen(PORT, () => {
   console.log(`Sales bot listening on port ${PORT}`);

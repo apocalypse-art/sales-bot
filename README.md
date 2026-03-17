@@ -11,9 +11,11 @@ Each tweet includes the artwork image, sale price in ETH and USD, and a link to 
 ```
 Your contract sells on any marketplace
         ↓
-Reservoir detects the on-chain sale
+Alchemy detects the on-chain NFT transfer
         ↓
-Reservoir sends a webhook to this bot
+Alchemy sends a webhook to this bot
+        ↓
+Bot waits ~45s, then asks OpenSea for the sale price & marketplace
         ↓
 Bot fetches the artwork image
 Bot fetches current ETH/USD price
@@ -43,41 +45,51 @@ Bot posts to your X/Twitter account
 
 ---
 
-### Step 2 — Reservoir account
+### Step 2 — OpenSea API key
 
-Reservoir is a free service that tracks NFT sales across every major marketplace.
+OpenSea is used to look up the sale price once a transfer is detected.
 
-1. Go to [reservoir.tools](https://reservoir.tools) and create a free account.
-2. Go to **API Keys** and create a key (free tier is fine).
-3. Go to **Webhooks** → **Create Webhook**:
-   - **Event type:** `sale.created`
-   - **Filter by contract:** Add each of your contract addresses (one per line)
-   - **Endpoint URL:** Leave blank for now — you'll fill this in after Step 3
-   - **Secret:** Create any random string and save it — this goes in `RESERVOIR_WEBHOOK_SECRET`
+1. Go to [docs.opensea.io/reference/api-keys](https://docs.opensea.io/reference/api-keys)
+2. Click **Request API Key** and fill in the short form (approval is usually instant).
+3. Copy the key — this goes in `OPENSEA_API_KEY`.
 
 ---
 
-### Step 3 — Deploy to Railway
+### Step 3 — Alchemy account
 
-Railway hosts the bot 24/7 for free (up to 500 hours/month on the Hobby plan).
+Alchemy watches your contracts on-chain and notifies the bot the moment a token is transferred (i.e. sold).
+
+1. Go to [dashboard.alchemy.com](https://dashboard.alchemy.com) and create a free account.
+2. Click **Create new app** → give it any name → select the chain your contracts are on (Ethereum Mainnet for most NFTs; also available: Base, Optimism, etc.).
+3. In the left sidebar, click **Notify** → **Webhooks** → **Create Webhook**.
+4. Choose webhook type: **NFT Activity**.
+5. Add each of your contract addresses.
+6. Set the **Webhook URL** to blank for now — you'll fill this in after Step 4.
+7. After creating the webhook, click on it to see the **Signing Key** — copy it into `ALCHEMY_SIGNING_KEY`.
+
+---
+
+### Step 4 — Deploy to Railway
+
+Railway hosts the bot 24/7 on a free tier (500 hours/month on the Hobby plan).
 
 1. Go to [railway.app](https://railway.app) and sign up with GitHub.
 2. Click **New Project → Deploy from GitHub repo** and select this repo.
 3. Once deployed, go to **Settings → Networking → Generate Domain** — this gives you a public URL like `https://your-app.railway.app`.
-4. Go to **Variables** and add all five environment variables from `.env.example` with your real values.
+4. Go to **Variables** and add all variables from `.env.example` with your real values.
 5. Railway will automatically restart the bot with the new variables.
 
 ---
 
-### Step 4 — Finish the Reservoir webhook
+### Step 5 — Finish the Alchemy webhook
 
 Now that you have a Railway URL:
 
-1. Go back to your Reservoir webhook and set the **Endpoint URL** to:
+1. Go back to your Alchemy webhook and set the **Webhook URL** to:
    ```
    https://your-app.railway.app/webhook
    ```
-2. Save the webhook.
+2. Save it.
 
 That's it. The bot is live.
 
@@ -85,7 +97,7 @@ That's it. The bot is live.
 
 ## Adding or removing contracts
 
-Go to your Reservoir webhook settings and add/remove contract addresses at any time. No code changes needed.
+Go to your Alchemy webhook settings and add/remove contract addresses at any time. No code changes needed.
 
 ---
 
@@ -103,32 +115,31 @@ cp .env.example .env
 npm run dev
 ```
 
-To send a test webhook, use a tool like [Postman](https://postman.com) or `curl`:
+To send a test webhook, use a tool like [Postman](https://postman.com) or `curl`.
+Note: leave `ALCHEMY_SIGNING_KEY` blank in your `.env` while testing locally so signature verification is skipped.
 
 ```bash
 curl -X POST http://localhost:3000/webhook \
   -H "Content-Type: application/json" \
   -d '{
-    "type": "sale.created",
-    "data": {
-      "sale": {
-        "token": {
-          "tokenId": "1",
-          "name": "Test Artwork #1",
-          "image": "https://picsum.photos/800/800",
-          "contract": "0x0000000000000000000000000000000000000000",
-          "collection": { "name": "Test Collection" }
-        },
-        "price": {
-          "amount": { "decimal": 0.5, "usd": 1250.00 },
-          "currency": { "symbol": "ETH" }
-        },
-        "orderSource": "opensea.io",
-        "txHash": "0xabc123"
-      }
+    "type": "NFT_ACTIVITY",
+    "event": {
+      "network": "ETH_MAINNET",
+      "activity": [
+        {
+          "fromAddress": "0x1111111111111111111111111111111111111111",
+          "toAddress":   "0x2222222222222222222222222222222222222222",
+          "contractAddress": "0xYOUR_CONTRACT_ADDRESS",
+          "erc721TokenId": "0x1",
+          "category": "token",
+          "log": { "transactionHash": "0xabc123" }
+        }
+      ]
     }
   }'
 ```
+
+The bot will wait 45 seconds then query OpenSea for the sale. If there's no real sale on OpenSea for that token, it will log "No recent sale found" and skip the tweet — which is the correct behaviour.
 
 ---
 
@@ -136,8 +147,9 @@ curl -X POST http://localhost:3000/webhook \
 
 ```
 src/
-  index.js          — Express server, receives webhooks
-  saleHandler.js    — Parses sale events, orchestrates the pipeline
+  index.js          — Express server, receives Alchemy webhooks
+  saleHandler.js    — Orchestrates the pipeline per transfer
+  openSeaService.js — Looks up sale price & marketplace from OpenSea
   twitterService.js — Uploads image + posts tweet
   imageService.js   — Downloads & converts NFT artwork to JPEG
   priceService.js   — Fetches live ETH/USD price from CoinGecko
@@ -148,4 +160,4 @@ src/
 
 ## Supported marketplaces
 
-OpenSea · Blur · Foundation · Zora · Manifold · SuperRare · Rarible · LooksRare · Magic Eden · X2Y2 · and any other marketplace indexed by Reservoir.
+OpenSea · Blur · Foundation · Zora · SuperRare · Rarible · LooksRare · Magic Eden · X2Y2 · and any other marketplace that OpenSea indexes.

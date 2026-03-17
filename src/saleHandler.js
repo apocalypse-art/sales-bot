@@ -1,115 +1,97 @@
 /**
  * Core sale processing logic.
- * Receives a Reservoir sale event, fetches artwork + price, then tweets.
+ *
+ * Receives an Alchemy NFT_ACTIVITY event, waits for OpenSea to index
+ * the sale, fetches artwork and ETH/USD price, then tweets.
  */
 
+const { fetchRecentSale } = require('./openSeaService');
 const { fetchEthUsdPrice } = require('./priceService');
 const { downloadImageBuffer } = require('./imageService');
 const { postSaleTweet } = require('./twitterService');
 
+// How long to wait after an on-chain transfer before querying OpenSea.
+// OpenSea usually indexes sales within 30–60 seconds of the transaction.
+const OPENSEA_INDEX_DELAY_MS = 45 * 1000;
+
 /**
- * Reservoir sale event data shape (simplified):
+ * Handle one activity entry from an Alchemy NFT_ACTIVITY webhook.
+ *
+ * Alchemy activity shape:
  * {
- *   sale: {
- *     token: { tokenId, name, image, contract, collection: { name } },
- *     price: { amount: { decimal, usd }, currency: { symbol } },
- *     orderSource: 'opensea.io' | 'blur.io' | 'foundation.app' | etc.
- *     txHash,
- *   }
+ *   fromAddress:      '0x...',
+ *   toAddress:        '0x...',
+ *   contractAddress:  '0x...',
+ *   erc721TokenId:    '0x1',       // hex token ID
+ *   category:         'token',
+ *   log: { transactionHash: '0x...', ... }
  * }
  */
-async function handleSaleEvent(data) {
-  const sale = data?.sale;
-  if (!sale) {
-    console.warn('Received event with no sale data, skipping.');
+async function handleAlchemyActivity(activity, network) {
+  const { fromAddress, toAddress, contractAddress, erc721TokenId, log } = activity;
+
+  // Skip mint events (transfers from the zero address are mints, not sales)
+  const ZERO = '0x0000000000000000000000000000000000000000';
+  if (!fromAddress || fromAddress.toLowerCase() === ZERO) {
+    console.log('Skipping mint event.');
     return;
   }
 
-  const token = sale.token;
-  const priceInfo = sale.price;
+  // Convert hex token ID to decimal string
+  const tokenId = erc721TokenId ? parseInt(erc721TokenId, 16).toString() : null;
+  if (!tokenId) {
+    console.warn('Could not parse tokenId from activity, skipping.');
+    return;
+  }
 
-  // ── Extract sale details ───────────────────────────────────────────────────
-  const tokenName    = token.name || `#${token.tokenId}`;
-  const collection   = token.collection?.name || 'Unknown Collection';
-  const contractAddr = token.contract;
-  const tokenId      = token.tokenId;
-  const marketplace  = formatMarketplace(sale.orderSource);
-  const ethPrice     = priceInfo?.amount?.decimal ?? 0;
-  const imageUrl     = token.image;
-  const txHash       = sale.txHash;
+  const txHash = log?.transactionHash ?? null;
+  console.log(`Transfer detected: contract=${contractAddress} tokenId=${tokenId} tx=${txHash}`);
+
+  // ── Wait for OpenSea to index the sale ────────────────────────────────────
+  console.log(`Waiting ${OPENSEA_INDEX_DELAY_MS / 1000}s for OpenSea to index…`);
+  await delay(OPENSEA_INDEX_DELAY_MS);
+
+  // ── Fetch sale details from OpenSea ───────────────────────────────────────
+  let sale;
+  try {
+    sale = await fetchRecentSale(contractAddress, tokenId, network);
+  } catch (err) {
+    console.error('OpenSea lookup failed:', err.message);
+    return;
+  }
+
+  if (!sale) {
+    // The transfer happened but OpenSea doesn't have a matching sale record.
+    // This is likely a wallet-to-wallet transfer, not a market sale — skip it.
+    console.log('No recent sale found on OpenSea for this transfer — skipping.');
+    return;
+  }
+
+  const { tokenName, imageUrl, ethPrice, currency, marketplace, saleLink } = sale;
 
   // ── Get USD value ──────────────────────────────────────────────────────────
-  // Reservoir sometimes includes usd directly; fall back to live price lookup
-  let usdPrice = priceInfo?.amount?.usd;
-  if (!usdPrice) {
-    const ethUsd = await fetchEthUsdPrice();
-    usdPrice = ethPrice * ethUsd;
-  }
+  const ethUsd   = await fetchEthUsdPrice();
+  const usdPrice = ethPrice * ethUsd;
 
-  console.log(
-    `Sale detected: ${collection} ${tokenName} — ` +
-    `${ethPrice} ETH ($${usdPrice.toFixed(2)}) on ${marketplace}`
-  );
+  console.log(`Sale confirmed: ${tokenName} — ${ethPrice} ${currency} ($${usdPrice.toFixed(2)}) on ${marketplace}`);
 
   // ── Download the artwork image ─────────────────────────────────────────────
-  let imageBuffer = null;
-  if (imageUrl) {
-    imageBuffer = await downloadImageBuffer(imageUrl);
-  }
-
-  // ── Build the marketplace link ─────────────────────────────────────────────
-  const saleLink = buildSaleLink(sale.orderSource, contractAddr, tokenId, txHash);
+  const imageBuffer = imageUrl ? await downloadImageBuffer(imageUrl) : null;
 
   // ── Post to Twitter ────────────────────────────────────────────────────────
   await postSaleTweet({
     tokenName,
-    collection,
     ethPrice,
     usdPrice,
+    currency,
     marketplace,
     saleLink,
     imageBuffer,
   });
 }
 
-/**
- * Convert an orderSource domain into a readable marketplace name.
- */
-function formatMarketplace(source) {
-  if (!source) return 'a marketplace';
-  const map = {
-    'opensea.io':        'OpenSea',
-    'blur.io':           'Blur',
-    'foundation.app':    'Foundation',
-    'manifold.xyz':      'Manifold',
-    'superrare.com':     'SuperRare',
-    'rarible.com':       'Rarible',
-    'looksrare.org':     'LooksRare',
-    'x2y2.io':           'X2Y2',
-    'magiceden.io':      'Magic Eden',
-    'zora.co':           'Zora',
-  };
-  return map[source] || source;
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Build a link to the sale or token on the relevant marketplace.
- */
-function buildSaleLink(source, contract, tokenId, txHash) {
-  // Etherscan tx link as a fallback (works for any marketplace)
-  const etherscanLink = txHash
-    ? `https://etherscan.io/tx/${txHash}`
-    : null;
-
-  const map = {
-    'opensea.io':     `https://opensea.io/assets/ethereum/${contract}/${tokenId}`,
-    'blur.io':        `https://blur.io/asset/${contract}/${tokenId}`,
-    'foundation.app': `https://foundation.app/mint/${contract}/${tokenId}`,
-    'zora.co':        `https://zora.co/collect/eth:${contract}/${tokenId}`,
-    'superrare.com':  `https://superrare.com/artwork-v2/${tokenId}`,
-  };
-
-  return map[source] || etherscanLink || `https://etherscan.io/token/${contract}?a=${tokenId}`;
-}
-
-module.exports = { handleSaleEvent };
+module.exports = { handleAlchemyActivity };
