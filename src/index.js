@@ -38,10 +38,15 @@ app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
 
   // ── Verify the request really came from Alchemy ───────────────────────────
-  const signingKey = process.env.ALCHEMY_SIGNING_KEY;
-  if (signingKey) {
+  const signingKeys = [
+    process.env.ALCHEMY_SIGNING_KEY_ETH,
+    process.env.ALCHEMY_SIGNING_KEY_SHAPE,
+    process.env.ALCHEMY_SIGNING_KEY, // fallback for single-key setups
+  ].filter(Boolean);
+  if (signingKeys.length > 0) {
     const signature = req.headers['x-alchemy-signature'];
-    if (!isValidAlchemySignature(req.rawBody, signature, signingKey)) {
+    const valid = signingKeys.some(key => isValidAlchemySignature(req.rawBody, signature, key));
+    if (!valid) {
       console.warn('Rejected webhook: invalid Alchemy signature');
       return;
     }
