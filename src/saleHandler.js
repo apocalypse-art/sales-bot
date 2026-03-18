@@ -104,8 +104,9 @@ async function handleAlchemyActivity(activity, network) {
   const { tokenName, imageUrl, ethPrice, currency, marketplace, saleLink } = sale;
 
   // ── Get USD value ──────────────────────────────────────────────────────────
+  const USD_STABLECOINS = new Set(['USDC', 'USDT', 'DAI', 'BUSD', 'FRAX', 'LUSD']);
   const ethUsd   = await fetchEthUsdPrice();
-  const usdPrice = ethPrice * ethUsd;
+  const usdPrice = USD_STABLECOINS.has(currency) ? ethPrice : ethPrice * ethUsd;
 
   console.log(`Sale confirmed: ${tokenName} — ${ethPrice} ${currency} ($${usdPrice.toFixed(2)}) on ${marketplace}`);
 
