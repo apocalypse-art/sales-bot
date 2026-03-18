@@ -14,6 +14,11 @@ const { postSaleTweet } = require('./twitterService');
 // OpenSea usually indexes sales within 30–60 seconds of the transaction.
 const OPENSEA_INDEX_DELAY_MS = 45 * 1000;
 
+// Deduplication: track recently processed tx hashes to prevent double-posting
+// if Alchemy retries a webhook delivery. Capped to avoid unbounded memory growth.
+const processedTxHashes = new Set();
+const MAX_PROCESSED_HASHES = 1000;
+
 /**
  * Handle one activity entry from an Alchemy NFT_ACTIVITY webhook.
  *
@@ -47,6 +52,19 @@ async function handleAlchemyActivity(activity, network) {
 
   const txHash = log?.transactionHash ?? null;
   console.log(`Transfer detected: contract=${contractAddress} tokenId=${tokenId} tx=${txHash}`);
+
+  // Skip if we've already handled this transaction (Alchemy webhook retry)
+  if (txHash && processedTxHashes.has(txHash)) {
+    console.log(`Skipping duplicate webhook for tx=${txHash}`);
+    return;
+  }
+  if (txHash) {
+    processedTxHashes.add(txHash);
+    if (processedTxHashes.size > MAX_PROCESSED_HASHES) {
+      // Drop the oldest entry to keep memory bounded
+      processedTxHashes.delete(processedTxHashes.values().next().value);
+    }
+  }
 
   // ── Wait for OpenSea to index the sale ────────────────────────────────────
   console.log(`Waiting ${OPENSEA_INDEX_DELAY_MS / 1000}s for OpenSea to index…`);
