@@ -28,7 +28,7 @@ const OPENSEA_INDEX_DELAY_MS = 45 * 1000;
  * }
  */
 async function handleAlchemyActivity(activity, network) {
-  const { fromAddress, toAddress, contractAddress, erc721TokenId, log } = activity;
+  const { fromAddress, toAddress, contractAddress, erc721TokenId, erc1155Metadata, log } = activity;
 
   // Skip mint events (transfers from the zero address are mints, not sales)
   const ZERO = '0x0000000000000000000000000000000000000000';
@@ -37,8 +37,9 @@ async function handleAlchemyActivity(activity, network) {
     return;
   }
 
-  // Convert hex token ID to decimal string
-  const tokenId = erc721TokenId ? parseInt(erc721TokenId, 16).toString() : null;
+  // Support both ERC-721 (erc721TokenId) and ERC-1155 (erc1155Metadata[0].tokenId)
+  const rawTokenId = erc721TokenId ?? erc1155Metadata?.[0]?.tokenId ?? null;
+  const tokenId = rawTokenId ? parseInt(rawTokenId, 16).toString() : null;
   if (!tokenId) {
     console.warn('Could not parse tokenId from activity, skipping.');
     return;
