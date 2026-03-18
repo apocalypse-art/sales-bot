@@ -59,8 +59,7 @@ async function postSaleTweet({ tokenName, ethPrice, usdPrice, currency = 'ETH', 
   let mediaId;
   if (imageBuffer) {
     try {
-      // The v1 media upload endpoint is still required for image uploads
-      mediaId = await client.v1.uploadMedia(imageBuffer, { mimeType: 'image/jpeg' });
+      mediaId = await client.v2.uploadMedia(imageBuffer, { media_type: 'image/jpeg' });
       console.log('Image uploaded, mediaId:', mediaId);
     } catch (err) {
       console.warn('Image upload failed, posting without image:', err.message);
