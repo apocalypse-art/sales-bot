@@ -7,7 +7,6 @@
  * and converts it to a JPEG buffer safe to upload.
  */
 
-const axios = require('axios');
 const sharp = require('sharp');
 
 // Maximum dimension for the tweet image (Twitter recommends ≤4096px)
@@ -25,18 +24,24 @@ async function downloadImageBuffer(url) {
   const httpUrl = resolveIpfsUrl(url);
 
   try {
-    const response = await axios.get(httpUrl, {
-      responseType: 'arraybuffer',
-      timeout: 15000,
-      maxContentLength: 20 * 1024 * 1024, // 20 MB download limit
+    const res = await fetch(httpUrl, {
+      signal: AbortSignal.timeout(15000),
       headers: {
         // Some image servers block non-browser user agents
         'User-Agent': 'Mozilla/5.0 (compatible; SalesBot/1.0)',
       },
     });
 
-    const contentType = response.headers['content-type'] || '';
-    const rawBuffer = Buffer.from(response.data);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const contentType = res.headers.get('content-type') || '';
+    const rawBuffer = Buffer.from(await res.arrayBuffer());
+
+    // Enforce a 20 MB download limit
+    if (rawBuffer.length > 20 * 1024 * 1024) {
+      console.warn('Image exceeds 20 MB limit, skipping.');
+      return null;
+    }
 
     // ── SVGs aren't supported by Twitter; skip ────────────────────────────
     if (contentType.includes('svg') || url.endsWith('.svg')) {

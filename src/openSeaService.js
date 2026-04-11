@@ -9,8 +9,6 @@
  * Free API key available at: https://docs.opensea.io/reference/api-keys
  */
 
-const axios = require('axios');
-
 // Map Alchemy network names → OpenSea chain slugs
 const NETWORK_TO_CHAIN = {
   ETH_MAINNET:   'ethereum',
@@ -61,15 +59,19 @@ async function fetchRecentSale(contractAddress, tokenId, alchemyNetwork) {
   if (!apiKey) throw new Error('Missing OPENSEA_API_KEY');
 
   const chain = NETWORK_TO_CHAIN[alchemyNetwork] ?? 'ethereum';
-  const url   = `https://api.opensea.io/api/v2/events/chain/${chain}/contract/${contractAddress}/nfts/${tokenId}`;
+  const url   = `https://api.opensea.io/api/v2/events/chain/${chain}/contract/${contractAddress}/nfts/${tokenId}?event_type=sale&limit=1`;
 
-  const response = await axios.get(url, {
-    params:  { event_type: 'sale', limit: 1 },
+  const res = await fetch(url, {
     headers: { 'x-api-key': apiKey },
-    timeout: 10000,
+    signal:  AbortSignal.timeout(10000),
   });
 
-  const events = response.data?.asset_events;
+  if (!res.ok) {
+    throw new Error(`OpenSea API responded ${res.status}`);
+  }
+
+  const body   = await res.json();
+  const events = body?.asset_events;
   if (!events || events.length === 0) return null;
 
   const event = events[0];

@@ -3,8 +3,6 @@
  * Caches the price for 5 minutes to avoid hammering the API.
  */
 
-const axios = require('axios');
-
 let cachedPrice = null;
 let cacheTime = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -16,14 +14,12 @@ async function fetchEthUsdPrice() {
   }
 
   try {
-    const response = await axios.get(
-      'https://api.coingecko.com/api/v3/simple/price',
-      {
-        params: { ids: 'ethereum', vs_currencies: 'usd' },
-        timeout: 5000,
-      }
-    );
-    cachedPrice = response.data.ethereum.usd;
+    const url = 'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd';
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await res.json();
+    cachedPrice = data.ethereum.usd;
     cacheTime = now;
     console.log(`ETH price refreshed: $${cachedPrice}`);
     return cachedPrice;

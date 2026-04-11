@@ -9,6 +9,7 @@ const { fetchRecentSale, buildChainExplorerLink, OPENSEA_UNSUPPORTED } = require
 const { fetchEthUsdPrice } = require('./priceService');
 const { downloadImageBuffer } = require('./imageService');
 const { postSaleTweet } = require('./twitterService');
+const CONTRACTS = require('./contracts');
 
 // How long to wait after an on-chain transfer before querying OpenSea.
 // OpenSea usually indexes sales within 30–60 seconds of the transaction.
@@ -35,6 +36,14 @@ const MAX_PROCESSED_HASHES = 1000;
 async function handleAlchemyActivity(activity, network) {
   const { fromAddress, toAddress, contractAddress, erc721TokenId, erc1155Metadata, log } = activity;
 
+  // Skip contracts not in our registry
+  const collection = CONTRACTS[contractAddress?.toLowerCase()];
+  if (!collection) {
+    console.log(`Ignoring activity from unknown contract ${contractAddress}`);
+    return;
+  }
+  const collectionName = collection.name;
+
   // Skip mint events (transfers from the zero address are mints, not sales)
   const ZERO = '0x0000000000000000000000000000000000000000';
   if (!fromAddress || fromAddress.toLowerCase() === ZERO) {
@@ -51,7 +60,7 @@ async function handleAlchemyActivity(activity, network) {
   }
 
   const txHash = log?.transactionHash ?? null;
-  console.log(`Transfer detected: contract=${contractAddress} tokenId=${tokenId} tx=${txHash}`);
+  console.log(`Transfer detected: ${collectionName} contract=${contractAddress} tokenId=${tokenId} tx=${txHash}`);
 
   // Skip if we've already handled this transaction (Alchemy webhook retry)
   if (txHash && processedTxHashes.has(txHash)) {
