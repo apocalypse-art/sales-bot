@@ -26,19 +26,6 @@ const OPENSEA_UNSUPPORTED = new Set([
   'SHAPE_MAINNET',
 ]);
 
-// Map OpenSea marketplace IDs to readable names
-const MARKETPLACE_NAMES = {
-  opensea:       'OpenSea',
-  blur:          'Blur',
-  looksrare:     'LooksRare',
-  x2y2:          'X2Y2',
-  foundation:    'Foundation',
-  superrare:     'SuperRare',
-  rarible:       'Rarible',
-  zora:          'Zora',
-  magiceden:     'Magic Eden',
-};
-
 /**
  * Fetch the most recent sale for a specific token from the OpenSea Events API.
  * Returns null if no sale was found within the last 10 minutes.
@@ -97,9 +84,12 @@ async function fetchRecentSale(contractAddress, tokenId, alchemyNetwork) {
   const openSeaUrl = nft.opensea_url || null;
   const txHash     = event.transaction || null;
 
-  // ── Marketplace ───────────────────────────────────────────────────────────
-  const marketplaceId  = event.event_type === 'sale' ? (event.order_source ?? 'opensea') : 'opensea';
-  const marketplaceName = MARKETPLACE_NAMES[marketplaceId] ?? marketplaceId;
+  // ── Marketplace signal ────────────────────────────────────────────────────
+  // OpenSea's Events API does not reliably name the marketplace, so we don't
+  // guess it here. We pass through the settlement contract (protocol_address,
+  // when present) as a fallback signal; the marketplace name is resolved
+  // on-chain from the transaction in marketplaceService.
+  const protocolAddress = event.protocol_address ?? null;
 
   const saleLink = openSeaUrl
     ?? buildFallbackLink(chain, contractAddress, tokenId, txHash);
@@ -109,7 +99,7 @@ async function fetchRecentSale(contractAddress, tokenId, alchemyNetwork) {
     imageUrl,
     ethPrice,
     currency,
-    marketplace: marketplaceName,
+    protocolAddress,
     saleLink,
     txHash,
   };
