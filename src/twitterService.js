@@ -33,7 +33,7 @@ function getClient() {
  * @param {number}  opts.ethPrice      e.g. 0.5
  * @param {number}  opts.usdPrice      e.g. 1234.56
  * @param {string}  opts.currency      e.g. "ETH" or "WETH"
- * @param {string}  opts.marketplace   e.g. "OpenSea"
+ * @param {string|null} opts.marketplace  e.g. "Manifold"; null omits "on X"
  * @param {string}  opts.saleLink      URL to the sale / token page
  * @param {Buffer|null} opts.imageBuffer  Raw image bytes (or null if unavailable)
  */
@@ -46,8 +46,14 @@ async function postSaleTweet({ tokenName, ethPrice, usdPrice, currency = 'ETH', 
     ? [``, `${formatEth(ethPrice)} ${currency}  ($${formatUsd(usdPrice)})`]
     : [];
 
+  // Fall back to a marketplace-less headline when we couldn't identify it,
+  // rather than naming the wrong marketplace.
+  const headline = marketplace
+    ? `${tokenName} sold on ${marketplace}!`
+    : `${tokenName} sold!`;
+
   const tweetText = [
-    `${tokenName} sold on ${marketplace}!`,
+    headline,
     ...priceLines,
     ``,
     saleLink,

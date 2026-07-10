@@ -15,7 +15,8 @@ Alchemy detects the on-chain NFT transfer
         ↓
 Alchemy sends a webhook to this bot
         ↓
-Bot waits ~45s, then asks OpenSea for the sale price & marketplace
+Bot waits ~45s, then asks OpenSea for the sale price
+Bot reads the settlement contract on-chain to identify the marketplace
         ↓
 Bot fetches the artwork image
 Bot fetches current ETH/USD price
@@ -66,6 +67,7 @@ Alchemy watches your contracts on-chain and notifies the bot the moment a token 
 5. Add each of your contract addresses.
 6. Set the **Webhook URL** to blank for now — you'll fill this in after Step 4.
 7. After creating the webhook, click on it to see the **Signing Key** — copy it into `ALCHEMY_SIGNING_KEY`.
+8. Also copy your app's **HTTPS RPC URL** (Alchemy dashboard → your app → *Endpoints* / *API Key* → the `https://eth-mainnet.g.alchemy.com/v2/…` URL) into `ALCHEMY_RPC_URL`. The bot uses it to read which marketplace each sale settled through (e.g. Manifold vs OpenSea). If you leave it blank, tweets still post but won't name the marketplace.
 
 ---
 
@@ -160,4 +162,11 @@ src/
 
 ## Supported marketplaces
 
-OpenSea · Blur · Foundation · Zora · SuperRare · Rarible · LooksRare · Magic Eden · X2Y2 · and any other marketplace that OpenSea indexes.
+The bot tweets about a sale on **any** marketplace OpenSea indexes (so it catches
+the sale and its price). It **names** the marketplace by matching the sale's
+on-chain settlement contract against a known list — currently **Manifold** and
+**OpenSea** (Seaport). Sales settled through any other contract still tweet, just
+without a marketplace name (e.g. "Title sold!").
+
+To name more marketplaces, add their settlement contract address to
+`MARKETPLACE_CONTRACTS` in `src/marketplaceService.js`.

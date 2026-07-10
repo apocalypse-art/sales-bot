@@ -6,6 +6,7 @@
  */
 
 const { fetchRecentSale, buildChainExplorerLink, OPENSEA_UNSUPPORTED } = require('./openSeaService');
+const { identifyMarketplace } = require('./marketplaceService');
 const { fetchEthUsdPrice } = require('./priceService');
 const { downloadImageBuffer } = require('./imageService');
 const { postSaleTweet } = require('./twitterService');
@@ -110,14 +111,24 @@ async function handleAlchemyActivity(activity, network) {
     return;
   }
 
-  const { tokenName, imageUrl, ethPrice, currency, marketplace, saleLink } = sale;
+  const { tokenName, imageUrl, ethPrice, currency, protocolAddress, saleLink } = sale;
+
+  // ── Determine the marketplace from the settlement contract ──────────────────
+  // Read it from the chain rather than trusting OpenSea to name it — this is
+  // what correctly identifies Manifold sales instead of mislabeling them OpenSea.
+  const marketplace = await identifyMarketplace(txHash, network, protocolAddress);
+  if (marketplace) {
+    console.log(`Marketplace resolved: ${marketplace}`);
+  } else {
+    console.log('Marketplace could not be identified — tweeting without a marketplace name.');
+  }
 
   // ── Get USD value ──────────────────────────────────────────────────────────
   const USD_STABLECOINS = new Set(['USDC', 'USDT', 'DAI', 'BUSD', 'FRAX', 'LUSD']);
   const ethUsd   = await fetchEthUsdPrice();
   const usdPrice = USD_STABLECOINS.has(currency) ? ethPrice : ethPrice * ethUsd;
 
-  console.log(`Sale confirmed: ${tokenName} — ${ethPrice} ${currency} ($${usdPrice.toFixed(2)}) on ${marketplace}`);
+  console.log(`Sale confirmed: ${tokenName} — ${ethPrice} ${currency} ($${usdPrice.toFixed(2)})${marketplace ? ` on ${marketplace}` : ''}`);
 
   // ── Download the artwork image ─────────────────────────────────────────────
   const imageBuffer = imageUrl ? await downloadImageBuffer(imageUrl) : null;
