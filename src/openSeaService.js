@@ -17,12 +17,14 @@ const NETWORK_TO_CHAIN = {
   ARB_MAINNET:   'arbitrum',
   MATIC_MAINNET: 'matic',
   ZORA_MAINNET:  'zora',
+  SHAPE_MAINNET: 'shape',
 };
 
-// Chains that Alchemy supports but OpenSea does not index.
-// For these we return null from fetchRecentSale and saleHandler
-// falls back to a price-less "transfer detected" tweet.
-const OPENSEA_UNSUPPORTED = new Set([
+// Networks where, if OpenSea has no sale record for the transfer, we still post
+// a price-less "sold" tweet instead of skipping entirely. OpenSea now indexes
+// Shape, so most Shape sales come through with full data — but this keeps the
+// bot from going silent on the occasional Shape sale OpenSea doesn't have.
+const TWEET_WITHOUT_PRICE_NETWORKS = new Set([
   'SHAPE_MAINNET',
 ]);
 
@@ -36,12 +38,6 @@ const OPENSEA_UNSUPPORTED = new Set([
  * @returns {Promise<object|null>}
  */
 async function fetchRecentSale(contractAddress, tokenId, alchemyNetwork) {
-  // Short-circuit for chains OpenSea doesn't index
-  if (OPENSEA_UNSUPPORTED.has(alchemyNetwork)) {
-    console.log(`${alchemyNetwork} is not indexed by OpenSea — will tweet without price.`);
-    return null;
-  }
-
   const apiKey = process.env.OPENSEA_API_KEY;
   if (!apiKey) throw new Error('Missing OPENSEA_API_KEY');
 
@@ -112,7 +108,8 @@ function buildFallbackLink(chain, contract, tokenId, txHash) {
 }
 
 /**
- * Build an explorer link for chains not supported by OpenSea.
+ * Build an explorer link for the price-less fallback tweet (used when OpenSea
+ * has no sale record for a transfer on a TWEET_WITHOUT_PRICE_NETWORKS chain).
  */
 function buildChainExplorerLink(alchemyNetwork, contract, tokenId, txHash) {
   if (alchemyNetwork === 'SHAPE_MAINNET') {
@@ -123,4 +120,4 @@ function buildChainExplorerLink(alchemyNetwork, contract, tokenId, txHash) {
   return txHash ? `https://etherscan.io/tx/${txHash}` : null;
 }
 
-module.exports = { fetchRecentSale, buildChainExplorerLink, OPENSEA_UNSUPPORTED };
+module.exports = { fetchRecentSale, buildChainExplorerLink, TWEET_WITHOUT_PRICE_NETWORKS };

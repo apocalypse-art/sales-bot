@@ -5,7 +5,7 @@
  * the sale, fetches artwork and ETH/USD price, then tweets.
  */
 
-const { fetchRecentSale, buildChainExplorerLink, OPENSEA_UNSUPPORTED } = require('./openSeaService');
+const { fetchRecentSale, buildChainExplorerLink, TWEET_WITHOUT_PRICE_NETWORKS } = require('./openSeaService');
 const { identifyMarketplace } = require('./marketplaceService');
 const { fetchEthUsdPrice } = require('./priceService');
 const { downloadImageBuffer } = require('./imageService');
@@ -90,9 +90,10 @@ async function handleAlchemyActivity(activity, network) {
   }
 
   if (!sale) {
-    if (OPENSEA_UNSUPPORTED.has(network)) {
-      // Chain isn't indexed by OpenSea — tweet without price data.
-      console.log(`Tweeting Shape transfer without price (OpenSea doesn't index ${network}).`);
+    if (TWEET_WITHOUT_PRICE_NETWORKS.has(network)) {
+      // OpenSea had no sale record for this transfer, but on these chains we
+      // still post a price-less tweet rather than stay silent.
+      console.log(`No OpenSea sale record for ${network} — tweeting without price/image.`);
       const saleLink = buildChainExplorerLink(network, contractAddress, tokenId, txHash);
       await postSaleTweet({
         tokenName:   `#${tokenId}`,
