@@ -101,6 +101,53 @@ async function fetchRecentSale(contractAddress, tokenId, alchemyNetwork) {
   };
 }
 
+/**
+ * Fetch a token's metadata (name, image, OpenSea link) directly.
+ *
+ * The Events API only knows about *sales*, so it has nothing for a primary
+ * sale — the buyer minted the token, which OpenSea records as a transfer.
+ * This endpoint works regardless of how the token was acquired, so the
+ * primary-sale path uses it to get the artwork name and image.
+ *
+ * @param {string} contractAddress
+ * @param {string} tokenId          Decimal string (not hex)
+ * @param {string} alchemyNetwork   e.g. 'ETH_MAINNET'
+ * @returns {Promise<{tokenName: string|null, imageUrl: string|null, openSeaUrl: string|null}>}
+ */
+async function fetchNftMetadata(contractAddress, tokenId, alchemyNetwork) {
+  const apiKey = process.env.OPENSEA_API_KEY;
+  const chain  = NETWORK_TO_CHAIN[alchemyNetwork] ?? 'ethereum';
+  const empty  = { tokenName: null, imageUrl: null, openSeaUrl: null };
+
+  if (!apiKey) {
+    console.warn('Missing OPENSEA_API_KEY — tweeting without artwork name/image.');
+    return empty;
+  }
+
+  const url = `https://api.opensea.io/api/v2/chain/${chain}/contract/${contractAddress}/nfts/${tokenId}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: { 'x-api-key': apiKey },
+      signal:  AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) throw new Error(`OpenSea API responded ${res.status}`);
+
+    const nft = (await res.json())?.nft ?? {};
+    return {
+      // Artwork name only — never the collection name.
+      tokenName:  nft.name || null,
+      imageUrl:   nft.image_url || nft.display_image_url || null,
+      openSeaUrl: nft.opensea_url || null,
+    };
+  } catch (err) {
+    // Metadata is nice to have, not required — the tweet still goes out.
+    console.warn('OpenSea metadata lookup failed:', err.message);
+    return empty;
+  }
+}
+
 function buildFallbackLink(chain, contract, tokenId, txHash) {
   if (chain === 'ethereum' && txHash) return `https://etherscan.io/tx/${txHash}`;
   if (chain === 'base'     && txHash) return `https://basescan.org/tx/${txHash}`;
@@ -120,4 +167,10 @@ function buildChainExplorerLink(alchemyNetwork, contract, tokenId, txHash) {
   return txHash ? `https://etherscan.io/tx/${txHash}` : null;
 }
 
-module.exports = { fetchRecentSale, buildChainExplorerLink, TWEET_WITHOUT_PRICE_NETWORKS };
+module.exports = {
+  fetchRecentSale,
+  fetchNftMetadata,
+  buildChainExplorerLink,
+  buildFallbackLink,
+  TWEET_WITHOUT_PRICE_NETWORKS,
+};

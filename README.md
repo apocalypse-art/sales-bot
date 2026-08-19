@@ -15,7 +15,17 @@ Alchemy detects the on-chain NFT transfer
         ↓
 Alchemy sends a webhook to this bot
         ↓
-Bot waits ~45s, then asks OpenSea for the sale price
+   ┌────────────────────┴────────────────────┐
+   │                                         │
+SECONDARY sale                          PRIMARY sale
+(wallet → wallet)                       (mint from a claim page)
+   │                                         │
+Bot waits ~45s, then asks               Bot reads the price straight
+OpenSea for the sale price              from the mint transaction
+                                        (paid amount − Manifold's fee)
+   │                                         │
+   └────────────────────┬────────────────────┘
+        ↓
 Bot reads the settlement contract on-chain to identify the marketplace
         ↓
 Bot fetches the artwork image
@@ -149,13 +159,16 @@ The bot will wait 45 seconds then query OpenSea for the sale. If there's no real
 
 ```
 src/
-  index.js          — Express server, receives Alchemy webhooks
-  saleHandler.js    — Orchestrates the pipeline per transfer
-  openSeaService.js — Looks up sale price & marketplace from OpenSea
-  twitterService.js — Uploads image + posts tweet
-  imageService.js   — Downloads & converts NFT artwork to JPEG
-  priceService.js   — Fetches live ETH/USD price from CoinGecko
-.env.example        — Template for your credentials
+  index.js             — Express server, receives Alchemy webhooks
+  saleHandler.js       — Routes each transfer to the primary or secondary path
+  mintService.js       — Prices a primary sale from the mint transaction
+  openSeaService.js    — Looks up sale price & token metadata from OpenSea
+  marketplaceService.js— Names the marketplace from the settlement contract
+  chainService.js      — Shared JSON-RPC access (transactions & receipts)
+  twitterService.js    — Uploads image + posts tweet
+  imageService.js      — Downloads & converts NFT artwork to JPEG
+  priceService.js      — Fetches live ETH/USD price from CoinGecko
+.env.example           — Template for your credentials
 ```
 
 ---
@@ -170,3 +183,23 @@ without a marketplace name (e.g. "Title sold!").
 
 To name more marketplaces, add their settlement contract address to
 `MARKETPLACE_CONTRACTS` in `src/marketplaceService.js`.
+
+---
+
+## Primary sales (claim pages)
+
+When a collector buys from a Manifold claim page they *mint* the token, so the
+transfer comes from the zero address and OpenSea records no `sale` event for it.
+The bot handles these separately: it reads what the buyer actually paid from the
+mint transaction and subtracts Manifold's fixed per-token platform fee
+(0.0005 ETH), which is charged on top of your price.
+
+- **Free claims and airdrops don't tweet.** If nothing was paid beyond the
+  platform fee, the bot skips — it's not a sale.
+- **Multi-token mints tweet once**, with the total paid and a `×N` suffix.
+- If the mint transaction can't be read (no RPC configured for that chain), the
+  bot skips rather than guess — it can't tell a sale from an airdrop without it.
+
+Manifold's claim contract is listed in `MANIFOLD_CLAIM_EXTENSIONS` in
+`src/mintService.js`. If a future drop settles through a different Manifold
+contract, add its address there so the fee is subtracted correctly.
