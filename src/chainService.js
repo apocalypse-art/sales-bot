@@ -48,4 +48,15 @@ function fetchTransactionReceipt(txHash, network) {
   return rpcCall(network, 'eth_getTransactionReceipt', [txHash]);
 }
 
-module.exports = { fetchTransaction, fetchTransactionReceipt, RPC_URLS };
+/**
+ * Read-only contract call. Returns the raw hex result, or null.
+ *
+ * @param {string} to    Contract address
+ * @param {string} data  ABI-encoded call data (selector + args)
+ */
+function ethCall(to, data, network) {
+  if (!to || !data) return Promise.resolve(null);
+  return rpcCall(network, 'eth_call', [{ to, data }, 'latest']);
+}
+
+module.exports = { fetchTransaction, fetchTransactionReceipt, ethCall, RPC_URLS };
