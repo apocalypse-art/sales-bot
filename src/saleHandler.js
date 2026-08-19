@@ -151,13 +151,13 @@ async function handlePrimarySale({ contractAddress, tokenId, txHash, network }) 
   }
 
   const ethUsd   = await fetchEthUsdPrice();
-  const usdPrice = ethPrice * ethUsd;
+  const usdPrice = ethUsd != null ? ethPrice * ethUsd : null;
 
   const baseName  = meta.tokenName || `#${tokenId}`;
   const tokenName = quantity > 1 ? `${baseName} ×${quantity}` : baseName;
   const saleLink  = meta.openSeaUrl ?? buildChainExplorerLink(network, contractAddress, tokenId, txHash);
 
-  console.log(`Primary sale confirmed: ${tokenName} — ${ethPrice} ETH ($${usdPrice.toFixed(2)})${marketplace ? ` on ${marketplace}` : ''}`);
+  console.log(`Primary sale confirmed: ${tokenName} — ${ethPrice} ETH ${usdPrice != null ? `($${usdPrice.toFixed(2)})` : '(USD unknown)'}${marketplace ? ` on ${marketplace}` : ''}`);
 
   const imageBuffer = meta.imageUrl ? await downloadImageBuffer(meta.imageUrl) : null;
 
@@ -228,9 +228,13 @@ async function handleSecondarySale({ contractAddress, tokenId, txHash, network }
   // ── Get USD value ──────────────────────────────────────────────────────────
   const USD_STABLECOINS = new Set(['USDC', 'USDT', 'DAI', 'BUSD', 'FRAX', 'LUSD']);
   const ethUsd   = await fetchEthUsdPrice();
-  const usdPrice = USD_STABLECOINS.has(currency) ? ethPrice : ethPrice * ethUsd;
+  const usdPrice = ethPrice == null
+    ? null
+    : USD_STABLECOINS.has(currency)
+      ? ethPrice
+      : (ethUsd != null ? ethPrice * ethUsd : null);
 
-  console.log(`Sale confirmed: ${tokenName} — ${ethPrice} ${currency} ($${usdPrice.toFixed(2)})${marketplace ? ` on ${marketplace}` : ''}`);
+  console.log(`Sale confirmed: ${tokenName} — ${ethPrice ?? 'price unknown'} ${currency} ${usdPrice != null ? `($${usdPrice.toFixed(2)})` : '(USD unknown)'}${marketplace ? ` on ${marketplace}` : ''}`);
 
   // ── Download the artwork image ─────────────────────────────────────────────
   const imageBuffer = imageUrl ? await downloadImageBuffer(imageUrl) : null;

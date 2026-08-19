@@ -25,8 +25,12 @@ async function fetchEthUsdPrice() {
     return cachedPrice;
   } catch (err) {
     console.error('Failed to fetch ETH price:', err.message);
-    // Return cached value even if stale, or a fallback of 0
-    return cachedPrice ?? 0;
+    // A stale cached price is still a real price, so prefer it. But with no
+    // cache at all we do not know the dollar value — and 0 is not "unknown",
+    // it is a claim that the sale was worth nothing. Returning it published
+    // "1.69 ETH ($0.00)" to a public, permanent timeline. Say null and let the
+    // caller leave the figure out.
+    return cachedPrice ?? null;
   }
 }
 

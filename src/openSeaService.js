@@ -70,7 +70,12 @@ async function fetchRecentSale(contractAddress, tokenId, alchemyNetwork) {
   // ── Parse payment amount ───────────────────────────────────────────────────
   const payment  = event.payment ?? {};
   const decimals = payment.decimals ?? 18;
-  const ethPrice = Number(payment.quantity ?? 0) / Math.pow(10, decimals);
+  // No amount means we could not read the price, not that the piece sold for
+  // nothing. null omits the figure from the tweet; 0 would announce a free sale.
+  const rawQuantity = payment.quantity;
+  const ethPrice = rawQuantity == null
+    ? null
+    : Number(rawQuantity) / Math.pow(10, decimals);
   const currency = payment.symbol ?? 'ETH';
 
   // ── Token metadata from OpenSea ───────────────────────────────────────────

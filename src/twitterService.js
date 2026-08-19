@@ -42,9 +42,12 @@ async function postSaleTweet({ tokenName, ethPrice, usdPrice, currency = 'ETH', 
 
   // ── Build tweet text ───────────────────────────────────────────────────────
   // ethPrice may be null for chains not indexed by OpenSea (e.g. Shape)
-  const priceLines = (ethPrice != null)
-    ? [``, `${formatEth(ethPrice)} ${currency}  ($${formatUsd(usdPrice)})`]
-    : [];
+  const knownUsd = usdPrice != null && Number.isFinite(usdPrice) && usdPrice > 0;
+  const priceLines = (ethPrice == null)
+    ? []
+    : [``, knownUsd
+        ? `${formatEth(ethPrice)} ${currency}  ($${formatUsd(usdPrice)})`
+        : `${formatEth(ethPrice)} ${currency}`];
 
   // Fall back to a marketplace-less headline when we couldn't identify it,
   // rather than naming the wrong marketplace.
