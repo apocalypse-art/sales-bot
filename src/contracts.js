@@ -29,6 +29,7 @@ const CONTRACTS = {
   '0x8415d610f19641d97c088b532663cdca3dc58826': { name: 'Editions', onChainName: '', type: '1155' },
   '0x4802bd775674f0638e850e6ab00d79e3341107d0': { name: 'Meeings', onChainName: 'Apocalypse Art - Meeings', type: '721' },
   '0xd60e8125558a4022e7fd0a2a456f27a3b8b6fd07': { name: 'Apocalypse Art', onChainName: 'Apocalypse Art', type: '721' },
+  '0x216d8507231a00daea3969fbaa43d21ea4155416': { name: 'STIMULANT', onChainName: 'STIMULANT', type: '721' },
 
   // ── Shape ──────────────────────────────────────────────────────────────────
   '0xdc77d7a6bae09fe36d23d27d8dfd7f930e7b981e': { name: 'The Ordeal', onChainName: 'Influx2', type: '721' },
