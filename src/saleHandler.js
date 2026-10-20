@@ -21,6 +21,7 @@ const {
 } = require('./openSeaService');
 const { identifyMarketplace, nameSettlementContract } = require('./marketplaceService');
 const { resolvePrimarySale } = require('./mintService');
+const { fetchOnChainMetadata } = require('./tokenMetadataService');
 const { fetchEthUsdPrice } = require('./priceService');
 const { downloadImageBuffer } = require('./imageService');
 const { postSaleTweet } = require('./twitterService');
@@ -172,7 +173,24 @@ async function handlePrimarySale({ contractAddress, tokenId, txHash, network }) 
   // ── Wait for OpenSea to index the newly minted token ──────────────────────
   console.log(`Paid mint: ${ethPrice} ETH. Waiting ${OPENSEA_INDEX_DELAY_MS / 1000}s for OpenSea to index the token…`);
   await delay(OPENSEA_INDEX_DELAY_MS);
-  const meta = await fetchMetadataWithRetry(contractAddress, tokenId, network);
+  let meta = await fetchMetadataWithRetry(contractAddress, tokenId, network);
+
+  // OpenSea can still be behind after the retries (the first STIMULANT sale,
+  // 2026-10-20, tweeted "#1" with no art). The token's own metadata is on the
+  // chain the moment it mints — use it for whatever OpenSea didn't give us.
+  if (!meta.tokenName || !meta.imageUrl) {
+    const type = CONTRACTS[contractAddress?.toLowerCase()]?.type;
+    const chain = await fetchOnChainMetadata(contractAddress, tokenId, network, type);
+    const chainName = chain.tokenName && !isPlaceholderName(contractAddress, chain.tokenName) ? chain.tokenName : null;
+    if (chainName || chain.imageUrl) {
+      console.log(`Filled from on-chain metadata: name=${!meta.tokenName && !!chainName} image=${!meta.imageUrl && !!chain.imageUrl}`);
+    }
+    meta = {
+      ...meta,
+      tokenName: meta.tokenName || chainName,
+      imageUrl:  meta.imageUrl  || chain.imageUrl,
+    };
+  }
 
   // ── Marketplace: we already know which contract settled the mint ──────────
   const marketplace = nameSettlementContract(settlementAddress);
@@ -187,7 +205,11 @@ async function handlePrimarySale({ contractAddress, tokenId, txHash, network }) 
 
   const baseName  = meta.tokenName || `#${tokenId}`;
   const tokenName = quantity > 1 ? `${baseName} ×${quantity}` : baseName;
-  const saleLink  = meta.openSeaUrl ?? buildChainExplorerLink(network, contractAddress, tokenId, txHash);
+  // The token's OpenSea page even before OpenSea has indexed it (it will have by the time anyone clicks);
+  // an explorer link only where OpenSea has no chain slug for us.
+  const saleLink  = meta.openSeaUrl
+    ?? (network === 'ETH_MAINNET' ? `https://opensea.io/assets/ethereum/${contractAddress}/${tokenId}`
+      : buildChainExplorerLink(network, contractAddress, tokenId, txHash));
 
   console.log(`Primary sale confirmed: ${tokenName} — ${ethPrice} ETH ${usdPrice != null ? `($${usdPrice.toFixed(2)})` : '(USD unknown)'}${marketplace ? ` on ${marketplace}` : ''}`);
 
