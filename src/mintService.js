@@ -11,7 +11,7 @@
  * price, so the sale price is:  tx.value − (mint fee × tokens minted).
  */
 
-const { fetchTransaction, fetchTransactionReceipt } = require('./chainService');
+const { fetchTransaction, fetchTransactionReceipt, ethCall } = require('./chainService');
 
 // Manifold's per-token platform fee, charged on top of the artist's price.
 const MANIFOLD_MINT_FEE_WEI = 500000000000000n; // 0.0005 ETH
@@ -51,8 +51,20 @@ async function resolvePrimarySale({ txHash, contractAddress, network }) {
   const valueWei = BigInt(tx.value ?? '0x0');
   const settlementAddress = tx.to ?? null;
 
-  // Nothing paid at all — an airdrop or a transfer-in, not a sale.
-  if (valueWei === 0n) return { isFree: true, quantity: 1, settlementAddress };
+  // Nothing paid in the transaction itself. Usually an airdrop — but a smart-wallet buyer (ERC-4337) pays from
+  // inside the transaction: the tx goes to the EntryPoint with value 0 and the wallet pays the claim itself.
+  // 🪤 2026-10-21: STIMULANT #55 was bought that way and was skipped as "free". So before calling it free,
+  // look for a Manifold claim mint in the logs and price it from the claim.
+  if (valueWei === 0n) {
+    const receipt = await fetchTransactionReceipt(txHash, network);
+    if (receipt && receipt.status !== '0x1') return null;
+    const claim = receipt ? await priceFromClaimLogs(receipt, contractAddress, network) : null;
+    if (claim) {
+      console.log(`No ETH on the transaction itself, but it minted Manifold claim ${claim.instanceId} — priced from the claim (smart wallet / relayed purchase).`);
+      return { ethPrice: claim.ethPrice, quantity: claim.quantity, settlementAddress: claim.extension, isFree: false };
+    }
+    return { isFree: true, quantity: 1, settlementAddress };
+  }
 
   const receipt = await fetchTransactionReceipt(txHash, network);
   if (receipt) {
@@ -100,6 +112,39 @@ async function resolvePrimarySale({ txHash, contractAddress, network }) {
     settlementAddress,
     isFree: false,
   };
+}
+
+// getClaim(address creatorContract, uint256 instanceId) on the ERC721 LazyPayableClaim extension. The claim is
+// returned as a tuple with a dynamic string in it, so the result starts with the tuple's offset: the claim's
+// fields start at word 1 — total, totalMax, walletMax, startDate, endDate, storageProtocol, contractVersion,
+// identical, merkleRoot, location (offset), cost = word 11, paymentReceiver, erc20 = word 13, signingAddress.
+// (Checked on-chain against a STIMULANT claim, 2026-10-21: cost 0.1 ETH at word 11, erc20 0 at word 13.)
+const GET_CLAIM = '0x0f79ab39';
+
+/**
+ * A Manifold claim mint found in the receipt, priced from the claim itself (artist price × tokens minted;
+ * Manifold's fee is on top of the cost, so nothing to subtract). Null if there is none, it isn't paid in ETH,
+ * or it is free.
+ */
+async function priceFromClaimLogs(receipt, contractAddress, network) {
+  const target = contractAddress?.toLowerCase();
+  for (const log of receipt.logs ?? []) {
+    const extension = log.address?.toLowerCase();
+    if (!MANIFOLD_CLAIM_EXTENSIONS.has(extension)) continue;
+    // The extension's mint events index (creatorContract, instanceId).
+    const topics = log.topics ?? [];
+    if (topics.length < 3 || '0x' + topics[1].slice(26).toLowerCase() !== target) continue;
+
+    const instanceId = BigInt(topics[2]);
+    const raw = await ethCall(extension, GET_CLAIM + target.slice(2).padStart(64, '0') + instanceId.toString(16).padStart(64, '0'), network);
+    if (!raw) return null;
+    const cost = decodeWord(raw, 11), erc20 = decodeWord(raw, 13);
+    if (erc20 !== 0n || cost === 0n) return null;
+
+    const quantity = countMintedUnits(receipt, contractAddress) || 1;
+    return { ethPrice: Number(cost * BigInt(quantity)) / 1e18, quantity, extension, instanceId: instanceId.toString() };
+  }
+  return null;
 }
 
 /**
