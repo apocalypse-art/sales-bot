@@ -164,7 +164,7 @@ function isValidBodySignature(rawBody, signature, secret) {
 }
 
 app.listen(PORT, () => {
-  console.log(`Sales bot listening on port ${PORT}`);
+  console.log(`Sales bot listening on port ${PORT} (Node ${process.version})`);
   console.log(`Webhook URL:  POST /webhook`);
   console.log(`Announce URL: POST /announce-sale`);
 });
